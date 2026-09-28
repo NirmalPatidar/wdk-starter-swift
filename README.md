@@ -2,26 +2,45 @@
 
 A minimal iOS example demonstrating [WDK Swift Core](https://github.com/Tetherto/wdk-core-swift) integration.
 
+> **Building your own app with WdkSwiftCore, not just running this example?**
+> See [wdk-core-swift's integration guide](https://github.com/Tetherto/wdk-core-swift/blob/main/INTEGRATION.md) —
+> this README only covers running this specific demo.
+
+## Known limitation
+
+Tapping **Create new wallet** or **Import Wallet** currently crashes — any
+wallet initialization hits a worker-thread/addon-resolution gap in Bare's
+runtime itself, not something specific to this app or its setup. Every other
+part of the app (once past wallet initialization) is unaffected. Tracked
+upstream; see `wdk-core-swift`'s
+[INTEGRATION.md](https://github.com/Tetherto/wdk-core-swift/blob/main/INTEGRATION.md#before-you-start-one-known-limitation)
+for the full detail.
+
 ## Prerequisites
 
 - **macOS** 14.0+
 - **Xcode** 15.0+
 - **XcodeGen**: `brew install xcodegen`
-- **Node.js** 18+ and npm (only needed to run the WDK Worklet Bundler)
+- **Node.js** 18+ and npm (only needed to run the setup script)
 
 ## Quick Start
 
-### 1. Generate the Worklet Bundle and Addons
-
-The worklet bundle and the native addons are produced with the [WDK Worklet Bundler](https://github.com/tetherto/wdk-worklet-bundler):
+### 1. Clone this repo
 
 ```bash
-npm install -g @tetherto/wdk-worklet-bundler
+git clone https://github.com/tetherto/wdk-starter-swift.git
+cd wdk-starter-swift
 ```
 
-Create a `wdk.config.js` in the repository root:
+### 2. Create `wdk.config.js`
 
-```js
+This example enables Ethereum and Bitcoin. Adjust the `networks` block if you
+need a different set — see the bundler's
+[Swift quick start](https://github.com/tetherto/wdk-worklet-bundler#quick-start--swift--kotlin-json-rpc)
+for the full reference.
+
+```bash
+cat > wdk.config.js << 'WDK_CONFIG_EOF'
 module.exports = {
   transport: "jsonrpc",
   networks: {
@@ -39,28 +58,47 @@ module.exports = {
     convertEsmToCjs: true, // required: JavaScriptCore cannot load ES modules from the bundle
   },
 };
+WDK_CONFIG_EOF
 ```
 
-Generate the bundle and the native addons:
+### 3. Run setup
+
+`Scripts/wdk-setup.js` is already part of this repo — it fetches BareKit,
+generates the worklet bundle and native addons, and produces the local
+`.wdk-runtime` package `project.yml` depends on.
 
 ```bash
-wdk-worklet-bundler generate --install
+node Scripts/wdk-setup.js --barekit-tag v2.3.0
 ```
 
-This writes `wdk-worklet.mobile.bundle` to the repository root and the addon xcframeworks plus `addons.yml` into `addons/`, which is where `project.yml` expects them. See the bundler's [Swift quick start](https://github.com/tetherto/wdk-worklet-bundler#quick-start--swift--kotlin-json-rpc) for the full configuration reference.
+Run this **before** the next step — XcodeGen validates `.wdk-runtime` exists
+before it will generate anything.
 
-### 2. Add BareKit
-
-Download `BareKit.xcframework` from the [bare-kit releases](https://github.com/holepunchto/bare-kit/releases) and place it in `frameworks/`.
-
-### 3. Generate and Run
+### 4. Generate and open the Xcode project
 
 ```bash
 xcodegen generate
 open wdk-starter-swift.xcodeproj
 ```
 
-Select a simulator, press `Cmd+R`, tap "Create new wallet".
+Set your Team under Signing & Capabilities, select a device or simulator,
+and press `Cmd+R`.
+
+### 5. Re-running setup later
+
+If you change `wdk.config.js` after the project already exists (different
+networks, a new BareKit tag), re-run setup from inside Xcode's own terminal
+instead of repeating step 3:
+
+```bash
+swift package wdk-setup --barekit-tag v2.3.0
+```
+
+If that refuses network access:
+
+```bash
+swift package --allow-network-connections all wdk-setup --barekit-tag v2.3.0
+```
 
 ## License
 
