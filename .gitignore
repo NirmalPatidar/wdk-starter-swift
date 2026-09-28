@@ -53,6 +53,8 @@ addons/*.xcframework
 # the entire source of an unexpectedly huge diff (8,000+ files from a single
 # `npm install` of this project's actual dependency set, confirmed directly).
 node_modules/
+package.json
+package-lock.json
 
 # wdk-worklet-bundler's own intermediate output (generated .d.ts, working files)
 .wdk/
@@ -65,8 +67,7 @@ node_modules/
 
 # Native addon output — addons/*.xcframework already covered above;
 # addons.yml is the other bundler-generated file in this directory
-addons/addons.yml
-
+addons/addons.yml  
 # Leftover BareKit download artifacts, if fetched manually at the repo root
 # instead of through the setup script (which cleans these up itself)
 barekit-prebuilds.zip

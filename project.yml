@@ -1,19 +1,5 @@
 name: wdk-starter-swift
 
-# =============================================================================
-# WDK Starter App
-#
-# Setup:
-#   1. Download prebuilds.zip + addons.zip from the latest release
-#   2. Unzip prebuilds.zip: BareKit.xcframework -> frameworks/, bundle -> project root
-#   3. Unzip addons.zip into addons/ directory
-#   4. Run: xcodegen generate
-#   5. Open and build
-# =============================================================================
-
-include:
-  - addons/addons.yml
-
 packages:
   WdkSwiftCore:
     url: https://github.com/NirmalPatidar/wdk-core-swift.git
@@ -47,9 +33,10 @@ targets:
       properties:
         com.apple.security.cs.allow-jit: true
     dependencies:
-      - framework: frameworks/BareKit.xcframework
       - package: WdkSwiftCore
         product: WdkSwiftCore
+      - package: WdkRuntime
+        product: WdkRuntime
     sources:
       - path: WdkStarterApp
       - path: wdk-worklet.mobile.bundle
