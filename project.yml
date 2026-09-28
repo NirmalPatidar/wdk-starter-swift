@@ -16,8 +16,10 @@ include:
 
 packages:
   WdkSwiftCore:
-    url: https://github.com/claudiovb/wdk-core-swift
-    branch: main
+    url: https://github.com/NirmalPatidar/wdk-core-swift.git
+    branch: feat/wdk-setup-automation
+  WdkRuntime:
+    path: ./.wdk-runtime
 
 targets:
   wdk-starter-swift:
