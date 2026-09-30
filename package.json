@@ -1,0 +1,18 @@
+{
+  "name": "wdk-starter-swift",
+  "private": true,
+  "description": "A minimal iOS example demonstrating WDK Swift Core integration.",
+  "dependencies": {
+    "@tetherto/pear-wrk-wdk": "^1.0.0-beta.16",
+    "@tetherto/wdk": "^1.0.0-beta.18",
+    "@tetherto/wdk-wallet-btc": "^1.0.0-beta.16",
+    "@tetherto/wdk-wallet-evm": "^1.0.0-beta.19",
+    "bare-node-runtime": "1.5.0"
+  },
+  "devDependencies": {
+    "@tetherto/wdk-worklet-bundler": "github:tetherto/wdk-worklet-bundler#pull/65/head"
+  },
+  "overrides": {
+    "bare-lief": "0.2.7"
+  }
+}

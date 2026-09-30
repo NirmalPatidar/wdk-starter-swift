@@ -53,8 +53,6 @@ addons/*.xcframework
 # the entire source of an unexpectedly huge diff (8,000+ files from a single
 # `npm install` of this project's actual dependency set, confirmed directly).
 node_modules/
-package.json
-package-lock.json
 
 # wdk-worklet-bundler's own intermediate output (generated .d.ts, working files)
 .wdk/

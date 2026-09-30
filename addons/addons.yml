@@ -2,34 +2,23 @@ targets:
   wdk-starter-swift:
     dependencies:
       - framework: bare-abort.2.0.13.xcframework
-      - framework: bare-buffer.3.6.1.xcframework
-      - framework: bare-channel.5.2.4.xcframework
-      - framework: bare-crypto.1.15.3.xcframework
-      - framework: bare-dns.2.1.4.xcframework
-      - framework: bare-fs.4.7.2.xcframework
-      - framework: bare-hrtime.2.1.1.xcframework
-      - framework: bare-inspect.3.1.4.xcframework
-      - framework: bare-logger.2.0.3.xcframework
-      - framework: bare-module-lexer.1.5.3.xcframework
-      - framework: bare-module.6.4.0.xcframework
+      - framework: bare-buffer.3.7.1.xcframework
+      - framework: bare-crypto.1.15.4.xcframework
+      - framework: bare-dns.2.2.1.xcframework
+      - framework: bare-fs.4.8.2.xcframework
+      - framework: bare-hrtime.2.1.2.xcframework
+      - framework: bare-inspect.3.1.10.xcframework
       - framework: bare-os.3.9.3.xcframework
-      - framework: bare-performance.2.0.0.xcframework
-      - framework: bare-pipe.4.2.2.xcframework
+      - framework: bare-path.3.1.2.xcframework
+      - framework: bare-performance.2.1.1.xcframework
+      - framework: bare-pipe.4.3.1.xcframework
       - framework: bare-posix.1.0.1.xcframework
-      - framework: bare-realm.2.0.1.xcframework
-      - framework: bare-repl.6.1.0.xcframework
-      - framework: bare-signals.4.2.0.xcframework
-      - framework: bare-stdio.1.0.2.xcframework
-      - framework: bare-structured-clone.1.6.0.xcframework
-      - framework: bare-subprocess.6.1.0.xcframework
-      - framework: bare-system-logger.1.0.3.xcframework
-      - framework: bare-tcp.2.5.1.xcframework
-      - framework: bare-thread.1.2.4.xcframework
-      - framework: bare-timers.3.2.1.xcframework
-      - framework: bare-tls.3.1.7.xcframework
-      - framework: bare-tty.5.1.1.xcframework
-      - framework: bare-type-stripper.0.1.2.xcframework
-      - framework: bare-type.1.1.0.xcframework
-      - framework: bare-url.2.4.5.xcframework
-      - framework: bare-zlib.1.4.0.xcframework
+      - framework: bare-signals.5.0.0.xcframework
+      - framework: bare-stdio.1.0.3.xcframework
+      - framework: bare-tcp.2.6.1.xcframework
+      - framework: bare-tls.3.1.11.xcframework
+      - framework: bare-tty.5.2.1.xcframework
+      - framework: bare-type.1.4.0.xcframework
+      - framework: bare-url.2.5.4.xcframework
+      - framework: bare-zlib.1.4.1.xcframework
       - framework: sodium-native.5.1.0.xcframework

@@ -76,8 +76,15 @@ const { execFileSync } = require('child_process')
 const ROOT = process.cwd()
 const RUNTIME_DIR = path.join(ROOT, '.wdk-runtime')
 const FRAMEWORKS_DIR = path.join(RUNTIME_DIR, 'Frameworks')
-const ADDONS_DIR = path.join(ROOT, 'addons')
 const MARKER_PATH = path.join(RUNTIME_DIR, '.wdk-setup-marker')
+
+// Resolved from the consumer's own wdk.config.js at startup — NOT hardcoded.
+// A config can put its addons anywhere (e.g. "./out/ios-addons" instead of
+// the "./addons" this script originally assumed); reading it directly from
+// the config, the same file the bundler itself reads, is the only way to
+// stay correct for every consumer rather than just the one config this was
+// first tested against.
+let ADDONS_DIR
 
 const EXTRA_LINK_MODULES = ['bare-broadcast-channel']
 const HOSTS = ['ios-arm64', 'ios-arm64-simulator', 'ios-x64-simulator']
@@ -104,6 +111,22 @@ function parseArgs (argv) {
 // ---------------------------------------------------------------------------
 // Step 1 — local (never global) bundler install
 // ---------------------------------------------------------------------------
+
+function resolveAddonsDir () {
+  const configPath = path.join(ROOT, 'wdk.config.js')
+  delete require.cache[require.resolve(configPath)] // in case a prior run's require cached a stale version
+  const config = require(configPath)
+
+  const configured = config.output?.addons?.ios
+  if (!configured) {
+    log('⚠ wdk.config.js has no output.addons.ios set — defaulting to ./addons. Set it explicitly to silence this.')
+    return path.join(ROOT, 'addons')
+  }
+
+  const resolved = path.resolve(ROOT, configured)
+  log(`✓ addons output directory from wdk.config.js: ${configured}`)
+  return resolved
+}
 
 function ensureLocalPackageJson () {
   const pkgPath = path.join(ROOT, 'package.json')
@@ -446,6 +469,7 @@ async function main () {
   }
 
   fs.mkdirSync(RUNTIME_DIR, { recursive: true })
+  ADDONS_DIR = resolveAddonsDir()
   const inputHash = computeInputHash(opts)
   const marker = readMarker()
   if (!opts.force && marker && marker.inputHash === inputHash && fs.existsSync(path.join(RUNTIME_DIR, 'Package.swift'))) {
