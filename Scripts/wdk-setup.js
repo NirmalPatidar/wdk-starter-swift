@@ -7,8 +7,7 @@
  * Usage:
  *   node Scripts/wdk-setup.js [--platform ios|macos] [--engine jsc|v8]
  *                             [--barekit-tag <tag>] [--barekit-dir <path>]
- *                             [--bundler-ref <npm-or-git-ref>] [--pin <name@version>]...
- *                             [--force]
+ *                             [--bundler-ref <npm-version-or-git-ref>] [--force]
  *
  * --platform (default: ios) — ios produces the .wdk-runtime satellite Swift
  *   Package (a small local package of binary targets) that a consumer app adds
@@ -22,24 +21,26 @@
  *   builds side by side (ios/ + darwin/ for V8, ios-javascriptcore/ +
  *   darwin-javascriptcore/ for JavaScriptCore) — not one build with an option.
  *   JSC is the default because it is the engine Apple ships and is ~11x smaller.
- *   V8 is the only one that works with worker threads today, so pass
- *   --engine v8 until holepunchto/bare-node-runtime#13 and holepunchto/libjsc#26
- *   are fixed. V8 loads ES modules natively (convertEsmToCjs: false); JSC
- *   needs convertEsmToCjs: true.
+ *   It is reported to fail on iOS 26 (it works on iOS 18 and macOS; under
+ *   investigation), so pass --engine v8 for iOS 26 devices. V8 loads ES modules
+ *   natively (convertEsmToCjs: false); JSC needs convertEsmToCjs: true. JSC works
+ *   with BareKit v2.3.0 today; running it with the latest BareKit (2.5.x) needs
+ *   tetherto/wdk-worklet-bundler#80, which is not released yet.
  *
  * --bundler-ref — install @tetherto/wdk-worklet-bundler from this npm version or
  *   git ref instead of the default (exactly 1.0.0-beta.15; see
  *   DEFAULT_BUNDLER_VERSION below), e.g. to try an unreleased build. Pin a full
  *   commit SHA: a branch or PR head can change under you.
  *
- * --pin name@version (repeatable) — extra exact dependency pins, written as
- *   direct dependencies like the bare-node-runtime pin below.
+ * --force — regenerate even when nothing changed. BareKit is not downloaded
+ *   again if the staged copy already matches the requested tag, platform and
+ *   engine; delete <Frameworks>/BareKit.xcframework to refetch (for example to
+ *   pick up a newer "latest").
  *
  * Run from the directory containing wdk.config.js (the consumer's own project
  * root for --platform ios; wdk-core-swift's own repo root for --platform macos).
  *
- * What it does, in order — each step addresses a concrete problem found while
- * setting this up by hand:
+ * What it does, in order:
  *
  *   1. Writes a fresh package.json and installs the JS tooling LOCALLY (never
  *      globally), wiping node_modules and the lockfile first. A global bundler
@@ -54,50 +55,35 @@
  *      1.5.1+ unconditionally requires bare-worker/global on every app's boot
  *      path, and JavaScriptCore's port is missing the SharedArrayBuffer binding
  *      bare-worker needs — see holepunchto/bare-node-runtime#13 and
- *      holepunchto/libjsc#26. Remove the pin once those are fixed.
+ *      holepunchto/libjsc#26. With the pin, no bare-worker is in the bundle.
+ *      Remove the pin once #13 is fixed.
  *
- *   2. Patches the bundler's dynamic-import validator in place (after step 1,
- *      since an install would undo it). It has a false positive: it flags any
- *      method literally named `import` (e.g. bare-module's own
- *      `ModuleLoader.import(entry, opts) {}`) as if it were a real dynamic import()
- *      expression, aborting bundle generation. The patch excludes matches preceded
- *      by `async ` or followed by `{` (a method-definition shape), while still
- *      catching genuine dynamic imports. Idempotent.
- *
- *   3. Runs `wdk-worklet-bundler generate --install` against wdk.config.js.
+ *   2. Runs `wdk-worklet-bundler generate --install` against wdk.config.js.
  *      Platforms come from options.targets (ios-* / darwin-* / android-*) or,
  *      for older bundlers, options.platforms; the addon output directory comes
- *      from output.addons.<platform>.
+ *      from output.addons.<platform>. The bundler discovers the native addons
+ *      from the bundle itself, so nothing is linked by hand here.
  *
- *   4. Links any addons in EXTRA_LINK_MODULES that the bundler didn't link itself.
- *      Currently just bare-broadcast-channel (needed by bare-worker). Uses the same
- *      `bare-link` the bundler uses. Bundlers before 1.0.0-beta.15 link a fixed
- *      addon list and miss it; 1.0.0-beta.15 and later discover addons from the
- *      bundle itself, so here this step is redundant but harmless.
- *
- *   5. Fetches BareKit.xcframework, tiered — first that applies wins:
+ *   3. Fetches BareKit.xcframework, tiered — first that applies wins:
  *        a. --barekit-dir <path>  — pre-provisioned local copy, used as-is, never
  *           modified.
- *        b. Upstream GitHub release — latest, or pinned via --barekit-tag. The
+ *        b. Already staged for this tag/platform/engine — kept (see --force above).
+ *        c. Upstream GitHub release — latest, or pinned via --barekit-tag. The
  *           same prebuilds.zip asset wdk-core-kotlin's fetchBareKit uses; the
  *           folder taken from it depends on --platform and --engine (see above).
  *
- *   6. iOS: generates the local satellite Swift Package (.wdk-runtime/Package.swift)
- *      with one .binaryTarget per addon xcframework, plus BareKit. A consumer adds
- *      it as a local package dependency once; after that every build embeds and
- *      signs everything via Xcode's own SwiftPM embed phase.
+ *   4. iOS: generates the local satellite Swift Package (.wdk-runtime/Package.swift)
+ *      with one .binaryTarget per addon xcframework, plus BareKit. Its minimum iOS
+ *      version is read from the frameworks themselves. A consumer adds it as a
+ *      local package dependency once; after that every build embeds and signs
+ *      everything via Xcode's own SwiftPM embed phase.
  *      macOS: stages the test resources and runs prepare-macos-frameworks.sh.
  *
- *   7. Writes .wdk-runtime/.wdk-setup-marker, a hash of everything that should
+ *   5. Writes .wdk-runtime/.wdk-setup-marker, a hash of everything that should
  *      trigger a re-run (wdk.config.js, --platform, --engine, --barekit-tag/dir,
- *      --bundler-ref, --pin). A repeat invocation with nothing changed, and the
- *      output still on disk, is a fast no-op (--force overrides). Mirrors
+ *      --bundler-ref). A repeat invocation with nothing changed, and the output
+ *      still on disk, is a fast no-op (--force overrides). Mirrors
  *      wdk-core-kotlin's .bare-kit-source marker file.
- *
- * Known limitation: on the JavaScriptCore engine, code that starts a worker
- * thread (bare-worker) does not work yet — JSC's port lacks the SharedArrayBuffer
- * binding it needs (holepunchto/libjsc#26). Neither this script nor wdk.config.js
- * can work around that; use --engine v8 until it is fixed upstream.
  */
 
 const fs = require('fs')
@@ -105,6 +91,7 @@ const path = require('path')
 const crypto = require('crypto')
 const https = require('https')
 const { execFileSync } = require('child_process')
+const { parseArgs: parseCliArgs } = require('util')
 
 const ROOT = process.cwd()
 const RUNTIME_DIR = path.join(ROOT, '.wdk-runtime')
@@ -124,10 +111,6 @@ let FRAMEWORKS_DIR
 // first tested against.
 let ADDONS_DIR
 
-const EXTRA_LINK_MODULES = ['bare-broadcast-channel']
-const IOS_HOSTS = ['ios-arm64', 'ios-arm64-simulator', 'ios-x64-simulator']
-const MACOS_HOSTS = ['darwin-arm64', 'darwin-x64']
-
 // The worklet bundler version installed when --bundler-ref isn't given. EXACT on
 // purpose, not a range: a floating ^1.0.0-beta.14 silently picked up beta.15
 // (published 2026-10-09), which rejects options.platforms and links a different
@@ -144,28 +127,33 @@ function fail (msg) {
   process.exit(1)
 }
 
+// util.parseArgs in strict mode: unknown or misspelled flags are errors (not
+// silently ignored), and both `--engine v8` and `--engine=v8` work.
 function parseArgs (argv) {
-  const opts = {
-    barekitTag: null,
-    barekitDir: null,
-    force: false,
-    bundlerRef: null,
-    platform: 'ios',
-    engine: 'jsc',
-    extraPins: {}
+  let values
+  try {
+    ({ values } = parseCliArgs({
+      args: argv,
+      strict: true,
+      options: {
+        platform: { type: 'string' },
+        engine: { type: 'string' },
+        'barekit-tag': { type: 'string' },
+        'barekit-dir': { type: 'string' },
+        'bundler-ref': { type: 'string' },
+        force: { type: 'boolean' }
+      }
+    }))
+  } catch (err) {
+    fail(`${err.message}\nUsage: node Scripts/wdk-setup.js [--platform ios|macos] [--engine jsc|v8] [--barekit-tag <tag>] [--barekit-dir <path>] [--bundler-ref <ref>] [--force]`)
   }
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--barekit-tag') opts.barekitTag = argv[++i]
-    else if (argv[i] === '--barekit-dir') opts.barekitDir = argv[++i]
-    else if (argv[i] === '--force') opts.force = true
-    else if (argv[i] === '--bundler-ref') opts.bundlerRef = argv[++i]
-    else if (argv[i] === '--platform') opts.platform = argv[++i]
-    else if (argv[i] === '--engine') opts.engine = argv[++i]
-    else if (argv[i] === '--pin') {
-      const [name, version] = argv[++i].split('@')
-      if (!name || !version) fail(`--pin expects "<name>@<version>", got "${argv[i]}"`)
-      opts.extraPins[name] = version
-    }
+  const opts = {
+    platform: values.platform ?? 'ios',
+    engine: values.engine ?? 'jsc',
+    barekitTag: values['barekit-tag'] ?? null,
+    barekitDir: values['barekit-dir'] ?? null,
+    bundlerRef: values['bundler-ref'] ?? null,
+    force: values.force ?? false
   }
   if (!['ios', 'macos'].includes(opts.platform)) {
     fail(`Unknown --platform "${opts.platform}" — expected "ios" or "macos".`)
@@ -242,7 +230,7 @@ function resolveAddonsDir (platform) {
 // branch) be used instead of DEFAULT_BUNDLER_VERSION — e.g.
 // `--bundler-ref github:tetherto/wdk-worklet-bundler#<commit>`. Pin a full commit
 // SHA for anything you want to reproduce.
-function writePackageJsonAndInstall (bundlerRef, extraPins) {
+function writePackageJsonAndInstall (bundlerRef) {
   const pkgPath = path.join(ROOT, 'package.json')
 
   // A PR/branch ref moves whenever its author pushes — PR#65's head changed
@@ -271,14 +259,7 @@ function writePackageJsonAndInstall (bundlerRef, extraPins) {
       // `overrides` entry (npm refuses with EOVERRIDE) almost every time.
       // Declaring it ourselves first means the bundler finds it already
       // installed and never tries to add its own entry at all.
-      'bare-node-runtime': '1.5.0',
-      // Any additional exact pins passed via repeatable `--pin name@version`
-      // flags — e.g. the full "era pin" set a specific BareKit tag /
-      // convertEsmToCjs combination needs, which isn't baked into this
-      // script since it's tied to one specific validated test config, not
-      // something every consumer needs. Same direct-dependency reasoning as
-      // bare-node-runtime applies to each of these too.
-      ...(extraPins || {})
+      'bare-node-runtime': '1.5.0'
     },
     devDependencies: {
       '@tetherto/wdk-worklet-bundler': bundlerRef || DEFAULT_BUNDLER_VERSION
@@ -304,58 +285,7 @@ function writePackageJsonAndInstall (bundlerRef, extraPins) {
 }
 
 // ---------------------------------------------------------------------------
-// Step 2 — patch the dynamic-import validator false positive
-// ---------------------------------------------------------------------------
-
-function patchDynamicImportValidator () {
-  const distDir = path.join(ROOT, 'node_modules', '@tetherto', 'wdk-worklet-bundler', 'dist')
-  if (!fs.existsSync(distDir)) fail('wdk-worklet-bundler dist/ not found — did step 1 succeed?')
-
-  const candidates = fs.readdirSync(distDir).filter((f) => f.endsWith('.js'))
-  let patched = false
-
-  for (const file of candidates) {
-    const fullPath = path.join(distDir, file)
-    let content = fs.readFileSync(fullPath, 'utf8')
-
-    // Already patched (idempotent re-run) — our marker comment is present.
-    if (content.includes('/* wdk-setup: dynamic-import false-positive patch */')) {
-      patched = true
-      continue
-    }
-
-    const original = 'if (/[^.\\w]import\\s*\\(/.test(content)) problems.push(`${key} still contains a dynamic import()`);'
-    if (!content.includes(original)) continue
-
-    const replacement = `/* wdk-setup: dynamic-import false-positive patch */
-			{
-				const __dynImportRe = /[^.\\w]import\\s*\\(([^)]*)\\)/g;
-				let __m, __flagged = false;
-				while ((__m = __dynImportRe.exec(content))) {
-					const __before = content.slice(Math.max(0, __m.index - 10), __m.index);
-					const __after = content.slice(__m.index + __m[0].length, __m.index + __m[0].length + 5);
-					if (!/\\basync\\s+$/.test(__before) && !/^\\s*\\{/.test(__after)) { __flagged = true; break; }
-				}
-				if (__flagged) problems.push(\`\${key} still contains a dynamic import()\`);
-			}`
-
-    content = content.replace(original, replacement)
-    fs.writeFileSync(fullPath, content)
-    patched = true
-    log(`✓ patched dynamic-import false positive in dist/${file}`)
-  }
-
-  if (!patched) {
-    fail(
-      'Could not find the dynamic-import validator to patch. The bundler may have ' +
-      'changed its compiled output — check dist/*.js for "still contains a dynamic import()" ' +
-      'and update this script\'s `original` string to match.'
-    )
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Step 4 — generate the bundle + standard addons
+// Step 2 — generate the bundle + addons
 // ---------------------------------------------------------------------------
 
 function runBundlerGenerate () {
@@ -371,53 +301,27 @@ function runBundlerGenerate () {
 }
 
 // ---------------------------------------------------------------------------
-// Step 5 — link addons the bundler's hardcoded list doesn't cover
-// ---------------------------------------------------------------------------
-
-async function linkExtraModules (platform) {
-  let link
-  try {
-    link = require(path.join(ROOT, 'node_modules', 'bare-link'))
-  } catch {
-    fail('Could not resolve bare-link from node_modules — is @tetherto/wdk-worklet-bundler installed?')
-  }
-
-  const hosts = platform === 'macos' ? MACOS_HOSTS : IOS_HOSTS
-
-  for (const moduleName of EXTRA_LINK_MODULES) {
-    const already = fs.existsSync(ADDONS_DIR) &&
-      fs.readdirSync(ADDONS_DIR).some((f) => f.startsWith(moduleName + '.'))
-    if (already) {
-      log(`✓ ${moduleName} already present in addons/ (bundler covered it this time)`)
-      continue
-    }
-
-    const modulePath = path.join(ROOT, 'node_modules', moduleName)
-    if (!fs.existsSync(modulePath)) {
-      fail(`${moduleName} not found in node_modules — is it a real (possibly transitive) dependency of this project?`)
-    }
-
-    log(`Linking ${moduleName} (not in wdk-worklet-bundler's built-in addon list)...`)
-    for await (const _step of link(modulePath, { hosts, out: ADDONS_DIR })) {
-      // bare-link logs its own progress; nothing to do per-step here.
-    }
-    log(`✓ linked ${moduleName}`)
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Step 6 — fetch BareKit, tiered
+// Step 3 — fetch BareKit, tiered
 // ---------------------------------------------------------------------------
 
 function fetchJSON (url) {
   return new Promise((resolve, reject) => {
     https.get(url, { headers: { 'User-Agent': 'wdk-setup' } }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume()
         return resolve(fetchJSON(res.headers.location))
       }
       let data = ''
       res.on('data', (c) => { data += c })
       res.on('end', () => {
+        if (res.statusCode !== 200) {
+          // Without this, GitHub's rate-limit reply (a JSON error object) parsed fine
+          // and surfaced as the misleading "no prebuilds.zip on release undefined".
+          const hint = res.statusCode === 403 || res.statusCode === 429
+            ? ' — most likely GitHub\'s unauthenticated API rate limit (60 requests/hour per IP). Wait and retry, or use --barekit-dir with a BareKit you already have.'
+            : res.statusCode === 404 ? ' — release not found (check --barekit-tag).' : ''
+          return reject(new Error(`HTTP ${res.statusCode} from ${url}${hint}`))
+        }
         try { resolve(JSON.parse(data)) } catch (e) { reject(e) }
       })
     }).on('error', reject)
@@ -452,13 +356,30 @@ function bareKitZipFolder (platform, engine) {
   return engine === 'v8' ? platformKey : `${platformKey}-javascriptcore`
 }
 
+// BareKit is a ~350-400 MB download, so what is staged is remembered: a marker next
+// to the xcframework records the tag, platform and engine it came from. The same
+// request is then a no-op, like wdk-core-kotlin's fetchBareKit, which skips when its
+// files are already present.
+const BAREKIT_MARKER = '.barekit-source'
+
 async function fetchBareKit (opts) {
   const destXcframework = path.join(FRAMEWORKS_DIR, 'BareKit.xcframework')
+  const markerPath = path.join(FRAMEWORKS_DIR, BAREKIT_MARKER)
+  fs.mkdirSync(FRAMEWORKS_DIR, { recursive: true })
 
   if (opts.barekitDir) {
     log(`Using pre-provisioned BareKit at ${opts.barekitDir} (never modified)`)
     fs.rmSync(destXcframework, { recursive: true, force: true })
     fs.cpSync(path.join(opts.barekitDir, 'BareKit.xcframework'), destXcframework, { recursive: true })
+    fs.rmSync(markerPath, { force: true }) // a pre-provisioned copy has no release to remember
+    return
+  }
+
+  const staged = readJSON(markerPath)
+  if (fs.existsSync(destXcframework) && staged &&
+      staged.platform === opts.platform && staged.engine === opts.engine &&
+      (!opts.barekitTag || staged.tag === opts.barekitTag)) {
+    log(`✓ BareKit ${staged.tag} (${opts.platform}/${opts.engine}) already staged — skipping the download. Delete ${path.relative(ROOT, destXcframework)} to refetch.`)
     return
   }
 
@@ -480,15 +401,16 @@ async function fetchBareKit (opts) {
 
   fs.rmSync(destXcframework, { recursive: true, force: true })
   fs.cpSync(path.join(tmpExtract, zipFolder, 'BareKit.xcframework'), destXcframework, { recursive: true })
+  fs.writeFileSync(markerPath, JSON.stringify({ tag: release.tag_name, platform: opts.platform, engine: opts.engine }, null, 2) + '\n')
 
   fs.rmSync(tmpZip, { force: true })
   fs.rmSync(tmpExtract, { recursive: true, force: true })
 
-  log(`✓ BareKit ${release.tag_name || opts.barekitTag} (${opts.platform}/${opts.engine}, ${zipFolder}/) staged`)
+  log(`✓ BareKit ${release.tag_name} (${opts.platform}/${opts.engine}, ${zipFolder}/) staged`)
 }
 
 // ---------------------------------------------------------------------------
-// Step 7 — generate the satellite Swift Package
+// Step 4 — generate the satellite Swift Package
 // ---------------------------------------------------------------------------
 
 function sanitizeTargetName (xcframeworkName) {
@@ -496,6 +418,43 @@ function sanitizeTargetName (xcframeworkName) {
     .replace(/\.xcframework$/, '')
     .replace(/[^a-zA-Z0-9]/g, '_')
     .replace(/^([0-9])/, '_$1')
+}
+
+// The package's minimum iOS version has to be at least what the binaries inside it
+// need (SwiftPM rejects a dependency whose minimum is above the app's deployment
+// target, and the reverse would just mislead), and no higher than that, or it locks
+// out apps that could run it. So it is read from the frameworks' own Info.plist
+// (MinimumOSVersion of the device slice) instead of being a guessed constant:
+// bare-link writes 15.0 into every addon today, and BareKit declares 14.0.
+function walkFiles (dir) {
+  const out = []
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) out.push(...walkFiles(full))
+    else out.push(full)
+  }
+  return out
+}
+
+function compareVersions (a, b) {
+  const pa = a.split('.').map(Number); const pb = b.split('.').map(Number)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0)
+    if (d !== 0) return d
+  }
+  return 0
+}
+
+function deriveIosFloor (xcframeworkDirs) {
+  let highest = null
+  for (const dir of xcframeworkDirs) {
+    for (const file of walkFiles(dir)) {
+      if (path.basename(file) !== 'Info.plist' || !file.includes(`${path.sep}ios-arm64${path.sep}`)) continue
+      const m = /<key>MinimumOSVersion<\/key>\s*<string>(\d+(?:\.\d+)*)<\/string>/.exec(fs.readFileSync(file, 'utf8'))
+      if (m && (highest === null || compareVersions(m[1], highest) > 0)) highest = m[1]
+    }
+  }
+  return highest
 }
 
 function generateSatellitePackage () {
@@ -511,7 +470,7 @@ function generateSatellitePackage () {
   // already staged it before this function runs, and wiping the whole
   // directory would delete it out from under the check just below.
   for (const entry of fs.readdirSync(FRAMEWORKS_DIR)) {
-    if (entry === 'BareKit.xcframework') continue
+    if (entry === 'BareKit.xcframework' || entry === BAREKIT_MARKER) continue
     fs.rmSync(path.join(FRAMEWORKS_DIR, entry), { recursive: true, force: true })
   }
 
@@ -534,6 +493,16 @@ function generateSatellitePackage () {
   targets.push('        .binaryTarget(name: "BareKitBinary", path: "Frameworks/BareKit.xcframework")')
   productTargets.push('"BareKitBinary"')
 
+  let minIos = deriveIosFloor(
+    fs.readdirSync(FRAMEWORKS_DIR).filter((f) => f.endsWith('.xcframework')).map((f) => path.join(FRAMEWORKS_DIR, f))
+  )
+  if (minIos) {
+    log(`✓ minimum iOS version ${minIos} (the highest MinimumOSVersion the frameworks declare)`)
+  } else {
+    minIos = '15.0'
+    log('⚠ could not read MinimumOSVersion from the frameworks — defaulting the package to iOS 15.0.')
+  }
+
   const manifest = `// swift-tools-version: 5.9
 // Generated by wdk-setup. Do not edit by hand — re-run \`node Scripts/wdk-setup.js\`
 // after changing wdk.config.js instead.
@@ -541,7 +510,7 @@ import PackageDescription
 
 let package = Package(
     name: "WdkRuntime",
-    platforms: [.iOS(.v16)],
+    platforms: [.iOS("${minIos}")],
     products: [
         .library(name: "WdkRuntime", targets: [${productTargets.join(', ')}])
     ],
@@ -556,7 +525,7 @@ ${targets.join(',\n')}
 }
 
 // ---------------------------------------------------------------------------
-// Step 7 (macOS variant) — stage Tests/Resources/macos and run the existing
+// Step 4 (macOS variant) — stage Tests/Resources/macos and run the existing
 // prepare-macos-frameworks.sh. No satellite package here — this feeds
 // wdk-core-swift's own `swift test`, not an Xcode embed phase.
 // ---------------------------------------------------------------------------
@@ -613,7 +582,7 @@ function stageMacosAddons () {
 }
 
 // ---------------------------------------------------------------------------
-// Step 8 — idempotency marker
+// Step 5 — idempotency marker
 // ---------------------------------------------------------------------------
 
 function readJSON (p) {
@@ -634,8 +603,7 @@ function computeInputHash (opts) {
     dir: opts.barekitDir,
     bundlerRef: opts.bundlerRef || DEFAULT_BUNDLER_VERSION,
     platform: opts.platform,
-    engine: opts.engine,
-    extraPins: opts.extraPins
+    engine: opts.engine
   }))
   return hash.digest('hex')
 }
@@ -689,14 +657,8 @@ async function main () {
 
   log(`=== wdk-setup (platform: ${opts.platform}, engine: ${opts.engine}) ===\n`)
 
-  writePackageJsonAndInstall(opts.bundlerRef, opts.extraPins)
-  // Patched AFTER install, never before — writePackageJsonAndInstall wipes
-  // node_modules and reinstalls fresh on every run, which would silently
-  // undo an earlier patch and reintroduce the exact failure it fixes.
-  patchDynamicImportValidator()
-
+  writePackageJsonAndInstall(opts.bundlerRef)
   runBundlerGenerate()
-  await linkExtraModules(opts.platform)
   await fetchBareKit(opts)
 
   if (opts.platform === 'macos') {
@@ -710,12 +672,12 @@ async function main () {
   if (opts.platform === 'macos') {
     log('   Run ./Scripts/test-with-frameworks.sh to execute the test suite.')
   } else {
-    log('   Add .wdk-runtime as a local Swift package dependency (once), then build as usual.')
+    log('   .wdk-runtime is a local Swift package. If your project does not reference it yet, add it')
+    log('   as a local package dependency (once); then build as usual.')
   }
-  if (opts.engine === 'jsc') {
-    log('   Known limitation (JSC): any feature that spins up a worker thread (bare-worker) will')
-    log('   still crash until holepunchto/bare-node-runtime#13 and holepunchto/libjsc#26 land —')
-    log('   use --engine v8 to work around this for now.')
+  if (opts.platform === 'ios' && opts.engine === 'jsc') {
+    log('   Note: the JavaScriptCore build is reported to fail on iOS 26 (it works on iOS 18 and macOS;')
+    log('   under investigation). Re-run with --engine v8 if you hit that.')
   }
 }
 

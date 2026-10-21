@@ -5,14 +5,14 @@ An iOS example for WDK (Wallet Development Kit) by Tether, demonstrating [WDK Sw
 For the broader WDK ecosystem, see the [WDK documentation](https://docs.wdk.tether.io/).
 
 > **Building your own app with WdkSwiftCore, not just running this example?**
-> See [wdk-core-swift's integration guide](https://github.com/Tetherto/wdk-core-swift/blob/main/INTEGRATION.md) —
+> See [wdk-core-swift's integration guide](https://github.com/Tetherto/wdk-core-swift#integration-guide) —
 > this README only covers running this specific demo.
 
 ## Prerequisites
 
 - **macOS** 14.0+ and **Xcode** 15.0+ (last verified with Xcode 27)
 - **XcodeGen**: `brew install xcodegen`
-- **Node.js** 18+ and npm — only used by the setup script
+- **Node.js** 18.3+ and npm — only used by the setup script
 - Internet access to GitHub — setup downloads BareKit (~400 MB) and a pinned build of the worklet bundler
 
 ## Quick Start
@@ -82,15 +82,9 @@ nothing changed.
 
 ## Why V8 is selected for now (temporary)
 
-`--engine v8` works around problems that are being fixed upstream. Drop it when the fix is released.
+BareKit ships a V8 and a JavaScriptCore build, and the script defaults to JavaScriptCore. The JavaScriptCore build is reported to fail on iOS 26 (it works on iOS 18 and macOS; under investigation), so this example passes `--engine v8`. Drop the flag once JavaScriptCore works on iOS 26.
 
-| Flag | Why it's needed | Drop it when |
-| --- | --- | --- |
-| `--engine v8` | BareKit ships two engine builds. The script defaults to JavaScriptCore, but JavaScriptCore's port lacks the `SharedArrayBuffer` binding that `bare-worker` needs ([libjsc#26](https://github.com/holepunchto/libjsc/issues/26)), and `bare-node-runtime` 1.5.1 loads `bare-worker` on every start ([bare-node-runtime#13](https://github.com/holepunchto/bare-node-runtime/issues/13)). V8 has neither problem. | Both issues are fixed and JavaScriptCore is verified on a device. |
-
-The script also pins `bare-node-runtime` to 1.5.0 for you, for the same reason as above. It installs the
-worklet bundler at an exact version (`1.0.0-beta.15`) rather than a range, because a newer release can
-change the config format (beta.15 did: it rejects `options.platforms` and uses `options.targets`).
+The script also pins `bare-node-runtime` to 1.5.0 for you: later versions load `bare-worker` on every start, which the JavaScriptCore port cannot run ([bare-node-runtime#13](https://github.com/holepunchto/bare-node-runtime/issues/13), [libjsc#26](https://github.com/holepunchto/libjsc/issues/26)). It installs the worklet bundler at an exact version (`1.0.0-beta.15`) rather than a range, because a newer release can change the config format (beta.15 did: it rejects `options.platforms` and uses `options.targets`).
 
 ## What has been verified
 
@@ -98,11 +92,6 @@ change the config format (beta.15 did: it rejects `options.platforms` and uses `
 - The command above, as written (bundler 1.0.0-beta.15, BareKit v2.5.5): the same checks, on a physical iPhone.
 
 Not yet verified: the iOS Simulator and iPad, and JavaScriptCore on a device.
-
-## Known limitations
-
-- On JavaScriptCore, anything that starts a worker thread (`bare-worker`) does not work yet. That is
-  why this example uses V8.
 
 ## License
 
